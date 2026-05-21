@@ -65,6 +65,52 @@ class PiExtensionCapabilitiesTests(unittest.TestCase):
             "plan resolver must include newest plan directory fallback",
         )
 
+    def test_dangerous_bash_uses_word_boundary_regex(self) -> None:
+        # v2.40: substring matching produced false positives on every benign
+        # `git push origin <branch>`. The runtime must now use a regex array
+        # so only destructive variants (--force, --mirror, rm -rf, sudo,
+        # chmod 777, git reset --hard, git clean -fd, fork bomb, dd to disk)
+        # trigger the warning.
+        text = self._read(RUNTIME_TS)
+        self.assertIn(
+            "DANGEROUS_BASH_PATTERNS",
+            text,
+            "runtime must define DANGEROUS_BASH_PATTERNS regex array",
+        )
+        # Substring-match shape must NOT be present. The v2.39.0 dangerPatterns
+        # list with a raw `"git push"` would fire on every benign push.
+        self.assertNotIn(
+            'dangerPatterns =',
+            text,
+            "v2.39.0 dangerPatterns substring list still present; replace with "
+            "DANGEROUS_BASH_PATTERNS regex array",
+        )
+        self.assertNotIn(
+            '"git push",',
+            text,
+            "raw substring 'git push' inside the danger list would false-positive "
+            "on benign pushes; use the --force/--mirror regex variant instead",
+        )
+        # Each required pattern, as literal substring of the TS source. These
+        # are stable to YAML/JS escaping: they appear verbatim in the file.
+        required_substrings = [
+            r"\brm\s+-[a-z]*r",                  # rm -rf, rm -fr, rm -Rf
+            r"\bsudo\b",                         # sudo
+            r"\bchmod\s+(0?777",                 # chmod 777 / chmod 0777
+            r"a\+rwx",                           # chmod a+rwx
+            r"\bgit\s+push\s+.*(--force",        # forced push
+            r"--mirror",                         # mirror push
+            r"\bgit\s+reset\s+--hard\b",         # git reset --hard
+            r"\bgit\s+clean\s+-",                # git clean -fd family
+            r"\bdd\s+.*of=",                     # dd to a raw device
+        ]
+        missing = [s for s in required_substrings if s not in text]
+        self.assertFalse(
+            missing,
+            "runtime missing required dangerous-command patterns: "
+            + ", ".join(missing),
+        )
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -2,6 +2,41 @@
 
 All notable changes to this project will be documented in this file.
 
+## [2.40.0] - 2026-05-21
+
+### Fixed
+
+- **Hook resolution order inverted: slug-mode now wins over legacy root** (item #1 in `proposal_v2_40.md`). Before v2.40, every hook body in `SKILL.md` checked `if [ -f task_plan.md ]` at the project root FIRST and only consulted `.planning/.active_plan` for attestation lookup, never for content lookup. When both a root `task_plan.md` and a slug-mode plan existed, the root plan silently won and the user's explicitly-active slug plan was bypassed. v2.40 rewrites the resolution chain across `UserPromptSubmit`, `PreToolUse`, and `PreCompact` so they consult `$PLAN_ID` env, then `.planning/.active_plan`, then newest `.planning/<slug>/` by mtime, and only fall back to root `task_plan.md` if no slug-mode plan resolves. Legacy single-file users keep working; parallel-plan users get the plan they actually pinned.
+- **`.active_plan` target dir validated before use** (item #2). If `.active_plan` content points to a deleted plan dir, the hook used to silently no-op because the outer `if [ -f task_plan.md ]` only checked root. v2.40 falls through to the newest-mtime resolution path, then root, instead of leaving the model with no context.
+- **`.active_plan` content validated against a safe-identifier regex** (item #3). `tr -d '[:space:]'` normalized whitespace-only content to an empty string, which the hook then concatenated into `.planning//task_plan.md` (an empty plan id). v2.40 enforces `^[A-Za-z0-9_][A-Za-z0-9._-]*$` on both `$PLAN_ID` env and `.active_plan` content, so corruption (whitespace, path traversal like `../escape`, leading-dot dotfile names) falls through to the next resolution step instead of producing weird path lookups.
+- **`check-complete.sh` honors `$PLAN_ID` and `.active_plan`** (item #4). The Stop hook passed `.planning/$AP/task_plan.md` explicitly so the bug was silent there, but any user invocation or third-party tooling that called `check-complete.sh` with no args saw "No task_plan.md found" even with an active slug plan. v2.40 wires the script into `resolve-plan-dir.sh` when no explicit path argument is passed, restoring slug-mode parity. Behavior with an explicit path argument is unchanged.
+- **Pi extension dangerous-command list uses word-boundary regex** (item #5). `runtime.ts` `isDangerousBashCommand` used substring matching against a flat list including `"git push"`. Every benign `git push origin <branch>` fired the warning, training users to ignore it. v2.40 replaces the substring list with a `DANGEROUS_BASH_PATTERNS` regex array: `\brm\s+-[a-z]*r[a-z]*f\b`, `\bsudo\b`, `\bchmod\s+(0?777|a\+rwx)\b`, `\bgit\s+push\s+.*(--force|-f\b|--mirror|\+)`, `\bgit\s+reset\s+--hard\b`, `\bgit\s+clean\s+-[a-z]*[fdx]`, a shell fork-bomb pattern, and `\bdd\s+.*of=/dev/[sh]d[a-z]`. Benign `git push` no longer triggers the notify; only destructive variants do.
+
+### Performance
+
+- **mtime-keyed SHA-256 cache in attestation hook** (item #6). Each `UserPromptSubmit` and `PreToolUse` hook previously ran a fresh `sha256sum` on `task_plan.md` to compare against the stored attestation. On Windows Git Bash this is ~800ms per fire dominated by bash spawn and disk I/O; over a 60-event session that is ~48 seconds of cumulative latency. v2.40 caches the result under `${TMPDIR:-/tmp}/pwf-sha/<key>` keyed by the absolute plan-file path, storing `mtime` and the hash. On the next fire, if the plan file's mtime is unchanged, the cached hash is reused without re-running `sha256sum`. The cache is per-system, transient, and invalidated automatically by any plan edit.
+- **KV-cache hygiene on injected progress.md tail** (item #7). The Manus-aligned auto-injection feature is most valuable when the Claude / Sonnet / Opus prefix cache stays warm across turns. The previous injection embedded the literal `tail -20 progress.md`, including sub-second timestamps and timezone-suffix forms that change every fire. Those bytes mid-prefix prevented cache reuse. v2.40 pipes the tail through `sed -E` to normalize `T<HH:MM:SS>(.<frac>)?Z` and `T<HH:MM:SS>(.<frac>)?(+|-)HH:MM` to a stable `T00:00:00Z` / `T00:00:00<TZ>` form before injection. The model still sees recent progress structure; only the volatile sub-fields are collapsed.
+
+### Portability
+
+- **`resolve-plan-dir.sh` uses portable mtime fallback chain** (item #19). The old `date -r FILE +%s || stat -c '%Y' FILE || echo 0` chain silently fell to `0` on systems lacking GNU coreutils (some Windows Git Bash builds, alpine busybox, restricted CI containers). When mtime resolves to `0` for every dir in `.planning/*/`, the newest-by-mtime resolution becomes order-dependent on directory listing rather than actual recency. v2.40 extends the chain to: GNU `stat -c '%Y'`, BSD `stat -f '%m'`, `date -r FILE +%s`, `python3 -c ... os.stat`, `python -c ... os.stat`, `perl -e ... (stat $f)[9]`, then `0`. The earlier paths cover GNU + BSD + macOS + Windows Git Bash + Alpine + WSL; the python/perl fallbacks cover everything else with a runtime cost only paid when the native shell tools are absent.
+- **`attest-plan.sh` uses atomic temp-rename with optional `flock` guard** (item #20). Concurrent legacy-mode attestations (two sessions in the same cwd with no `PLAN_ID`) used to race on a non-atomic `> .plan-attestation` redirect, occasionally producing a truncated or zero-length attestation that the hook then read as the expected hash and threw a false `[PLAN TAMPERED]` on the next prompt. v2.40 writes to a `.plan-attestation.tmp.<pid>` and renames into place, with `flock -w 5` around the rename when `flock` is available. The atomic-rename guarantee is the real fix; the flock is the cooperative gate against multi-writer disk-stall edge cases. The script also surfaces a one-line note when legacy-mode attestation activity is detected within 30 seconds of a prior write, pointing users to slug-mode for parallel sessions.
+
+### Verification
+
+- Test count: 130 pass / 2 pre-existing Windows exec-bit failures (test_script_permissions, unchanged from v2.39.0 and unrelated to this release). +20 new tests vs v2.39.0: 5 in `tests/test_resolve_plan_dir.py` covering corruption + dead-target + invalid-slug-scan, 5 in `tests/test_check_complete_resolver.py` covering the resolver wire-up, 1 concurrent-writer test in `tests/test_plan_attestation.py`, 1 word-boundary contract test in `tests/test_pi_extension_capabilities.py`, 8 hook-body behavioral tests in `tests/test_hook_body_v240.py` covering slug-beats-root, legacy-root, silent no-plan, corrupt-active-plan fall-through, SHA cache population, tamper-still-blocks, progress-timestamp normalization, and PreToolUse injection.
+- Hook body now ~3.2 KB single-line bash per event (up from ~1 KB in v2.39.0). Same idiom as the existing inline pattern. Long-term extract to `scripts/inject-plan-context.sh` is tracked as v2.41-class work in `proposal_v2_40.md`.
+
+### Changed
+
+- Version bumped to 2.40.0 across 14 SKILL.md variants, `plugin.json`, `marketplace.json`, `CITATION.cff` via `scripts/bump-version.py`. `.continue`, `.gemini`, `.pi`, `.kiro` lag intentionally.
+
+### Not changed (deliberate)
+
+- No brainstorm-before-plan gate (item #8 in `proposal_v2_40.md`). Deferred to a later release because it changes user-facing workflow shape and deserves its own focused cycle.
+- No new sidecar files (`decisions.md`, `lessons.md`, `await_approval.md`, dispatch queue, checkpoints). All deferred to v2.41 or v3.0 per the proposal.
+- No refactor of the canonical hook body into a dedicated script (item #17). The inline pattern is preserved; the new logic ships within the same single-line idiom. This is acknowledged as maintenance debt and tracked for v2.41.
+
 ## [2.39.0] - 2026-05-21
 
 ### Added
