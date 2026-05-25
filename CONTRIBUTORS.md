@@ -104,6 +104,11 @@ These amazing people have contributed code, documentation, or significant improv
 
 ### Other Contributors
 
+- **[@carterusedulm2-maker](https://github.com/carterusedulm2-maker)** - [PR #169](https://github.com/OthmanAdi/planning-with-files/pull/169), [PR #170](https://github.com/OthmanAdi/planning-with-files/pull/170)
+  - PR #169: replaced the `[[ $# -gt 0 ]]` bashism in `init-session.sh` with POSIX `[ $# -gt 0 ]` across the 8 mirrored copies (canonical, `.codebuddy`, `.codex`, `.continue`, `.factory`, `.gemini`, `.pi`, top-level `scripts/`). The script's shebang is `#!/usr/bin/env bash`, but `tests/test_init_session_slug.py` invokes it via `["sh", str(INIT_SH), ...]` which bypasses the shebang and runs under `dash` on Ubuntu, where the `[[ ]]` syntax fails before any slug-mode logic can execute
+  - PR #170: documented a Topic Handoff Pattern in `docs/quickstart.md` and `docs/workflow.md` for splitting unrelated topics across `.planning/<slug>/` directories or a manual `handoffs/<topic>.md` detail layer alongside `progress.md`
+  - **Impact:** the test invocation through `sh` now runs cleanly across Linux distributions with non-bash `/bin/sh`; the documentation surfaces the slug-mode and handoff convention as the recommended workflow for parallel and long-running topics
+
 - **[@gauravvojha](https://github.com/gauravvojha)** - [PR #167](https://github.com/OthmanAdi/planning-with-files/pull/167), [Issue #166](https://github.com/OthmanAdi/planning-with-files/issues/166)
   - Reported that `test_script_permissions.py` always failed on Windows because NTFS does not preserve POSIX executable bits
   - Supplied the initial `pytest.mark.skipif(sys.platform == "win32")` patch for the two exec-bit tests

@@ -2,6 +2,35 @@
 
 All notable changes to this project will be documented in this file.
 
+## [2.42.0] - 2026-05-25
+
+### Fixed
+
+- **POSIX `init-session.sh` portability across the 8 mirrors** (PR #169 by @carterusedulm2-maker): the script's shebang is `#!/usr/bin/env bash`, but `tests/test_init_session_slug.py:27` invokes it via `["sh", str(INIT_SH), *args]` which bypasses the shebang and runs the body under whatever `sh` resolves to. On Ubuntu and Debian where `/bin/sh` is `dash`, the `while [[ $# -gt 0 ]]` bashism failed with a syntax error before any slug-mode argument parsing could run. v2.42.0 swaps to POSIX `while [ $# -gt 0 ]` in the 8 mirrored copies: `scripts/init-session.sh` (top level), `skills/planning-with-files/scripts/init-session.sh` (canonical), and the `.codebuddy`, `.codex`, `.continue`, `.factory`, `.gemini`, `.pi` adapter copies. Behavior is identical under bash; the change only restores compatibility under dash so the slug-mode test suite runs portably.
+
+### Added
+
+- **Install-scope transparency block in canonical `SKILL.md`** (Turn-Loop Integration section). Documents which install route ships which surface: `/plugin install` includes the `commands/` folder with `/plan-goal` and `/plan-loop`, but `npx skills add` (and ClawHub) install only the contents of `skills/planning-with-files/` and therefore do not register the wrapper slash commands. The `PreCompact` hook is registered in the SKILL.md frontmatter and works for both routes. Also notes the `disable-model-invocation: true` interaction tracked in upstream issues anthropics/claude-code #26251 and #41417, where some Claude Code sessions refuse to execute the slash command even when the user types it directly.
+- **Manual fallback procedure** for `/plan-goal` and `/plan-loop` inline in the canonical `SKILL.md`. The procedures mirror what the `commands/plan-goal.md` and `commands/plan-loop.md` files would have fed the model when invoked: resolve the active plan, compose the goal condition or loop tick prompt, then issue Claude Code's native `/goal` or `/loop` primitive (always available, not plugin-scoped). Lets skill-only installs and sessions affected by the disable-model-invocation refusal pattern produce the same effect by following the steps inline.
+
+### Docs
+
+- **Topic Handoff Pattern documentation in `docs/quickstart.md` and `docs/workflow.md`** (PR #170 by @carterusedulm2-maker): documents an optional convention for splitting unrelated topics across `.planning/<slug>/` directories or a manual `handoffs/<topic>.md` detail layer alongside `progress.md`. The pattern is documentation-only; no shipped script reads `handoffs/`. Recommended for long-running operational topics that span multiple sessions, where keeping `progress.md` concise as a timeline index and putting durable detail (current state, commands, validation, risks, rollback, PR links) in a per-topic handoff file is easier to navigate after a `/clear`.
+- **README releases table row for v2.42.0** plus version badge bumped to 2.42.0.
+
+### Changed
+
+- Version bumped to 2.42.0 across 17 parity-locked files (14 SKILL.md variants plus `plugin.json`, `marketplace.json`, `CITATION.cff`) via `scripts/bump-version.py`. `.continue`, `.gemini`, `.pi`, `.kiro` lag intentionally per AGENTS.md release scope.
+
+### Verification
+
+- Test count: 130 pass, 2 skip (Windows exec-bit, pre-existing baseline since v2.34.1), 0 fail. PR #169 changes shell-only string syntax across mirrored scripts; PR #170 adds markdown only. Neither touches hooks, attestation, the resolver, or any script-execution path. Security audit completed 2026-05-25 (see `.planning/2026-05-25-security-audit/findings.md`): semgrep 0 findings, no preinstall/postinstall hooks anywhere, no remote fetches, SLUG_RE path-traversal defense parity confirmed across the 14 SKILL.md variants.
+- Web research basis for the transparency block: Anthropic skill docs at `code.claude.com/docs/en/skills` confirm that prompt-based slash commands are the blessed Claude Code pattern (matches bundled skills like `/loop`, `/goal`, `/run`, `/verify`, `/debug`). Quote: "Unlike most built-in commands, which execute fixed logic directly, bundled skills are prompt-based: they give Claude detailed instructions and let it orchestrate the work using its tools." The `commands/` and `skills/` directories are now unified per Anthropic: "Custom commands have been merged into skills." Plugin scope still distinguishes installation surface from `npx skills add`.
+
+### Thanks
+
+- @carterusedulm2-maker for both the POSIX init-session compatibility fix (PR #169) and the Topic Handoff workflow documentation (PR #170). Both filed on 2026-05-25, first contributions to the repo.
+
 ## [2.41.0] - 2026-05-24
 
 ### Fixed
