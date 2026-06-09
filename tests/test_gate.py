@@ -212,6 +212,29 @@ class GateDecisionTableTests(unittest.TestCase):
         after_second = int((self.plan_dir / ".stop_blocks").read_text().strip())
         self.assertEqual(2, after_second)
 
+    # -- .mode token parse (platform-critical, counterpart to inject-plan.sh) --
+    def test_autonomous_gate_token_activates_gate(self) -> None:
+        # The gated marker is two space-separated tokens, 'autonomous gate'.
+        # check-complete guard 1 must detect the 'gate' token inside it and arm
+        # the gate. (inject-plan.sh parses the same marker; that side is pinned in
+        # test_hook_body_v240.py ModeTokenParseTests. Both must agree on the token
+        # grammar so a gated plan behaves consistently across the two scripts.)
+        self.write_plan(phase1_status="in_progress")
+        self.set_mode("autonomous gate")
+        self.set_blocks(0)
+        result = self.run_gate(gate=True, stop_hook_active=False)
+        obj = self.parse_block(result.stdout)
+        self.assertEqual("block", obj["decision"])
+
+    def test_autonomous_only_token_does_not_gate(self) -> None:
+        # 'autonomous' without 'gate' is not gated mode: guard 1 must keep it
+        # advisory. This pins that the parse keys off the 'gate' token specifically.
+        self.write_plan(phase1_status="in_progress")
+        self.set_mode("autonomous")
+        self.set_blocks(0)
+        result = self.run_gate(gate=True, stop_hook_active=False)
+        self.assert_no_block(result)
+
 
 if __name__ == "__main__":
     unittest.main()

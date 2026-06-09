@@ -313,5 +313,187 @@ class InjectPlanBehaviorTests(unittest.TestCase):
         self.assertIn("===END PLAN DATA===", result.stdout)
 
 
+@unittest.skipUnless(have_sh(), "sh not available on this platform")
+class ModeTokenParseTests(unittest.TestCase):
+    """Pin the .mode token parse in inject-plan.sh (platform-critical).
+
+    The gated marker is the two space-separated tokens 'autonomous gate'. A prior
+    parse used `tr -d '[:space:]'`, which collapsed that to 'autonomousgate' so it
+    matched neither the `autonomous` nor the `gated` case branch: gated mode then
+    ran identically to legacy mode (pretool injection NOT suppressed, raw progress
+    tail injected instead of the structured ledger summary). These tests pin that
+    'autonomous gate' content actually activates both autonomous AND gated behavior
+    inside inject-plan.sh. The check-complete.sh side of the same token is pinned in
+    test_gate.py (the gate blocks only with .mode = 'autonomous gate').
+    """
+
+    def setUp(self) -> None:
+        self.tmp = Path(tempfile.mkdtemp(prefix="pwf-mode-"))
+        self.cache_dir = self.tmp / "_xdg_cache"
+        self.cache_dir.mkdir()
+        self.home_dir = self.tmp / "_home"
+        self.home_dir.mkdir()
+        self.env = os.environ.copy()
+        self.env["CLAUDE_SKILL_DIR"] = str(SKILL_DIR)
+        self.env["XDG_CACHE_HOME"] = str(self.cache_dir)
+        self.env["HOME"] = str(self.home_dir)
+        self.env.pop("PLAN_ID", None)
+        # A gated plan dir, attested so injection is not refused for missing
+        # attestation (that refusal is exercised separately below).
+        self.plan_dir = self.tmp / ".planning" / "2026-06-09-gated"
+        self.plan_dir.mkdir(parents=True)
+        self.plan_content = "# Gated Plan\n### Phase 1: Build\n- **Status:** in_progress\n"
+        (self.plan_dir / "task_plan.md").write_bytes(self.plan_content.encode("utf-8"))
+        (self.plan_dir / "progress.md").write_text(
+            "## tail line marker RAWPROGRESS\n", encoding="utf-8"
+        )
+        digest = hashlib.sha256(self.plan_content.encode("utf-8")).hexdigest()
+        (self.plan_dir / ".attestation").write_text(digest, encoding="utf-8")
+        (self.plan_dir / ".mode").write_text("autonomous gate\n", encoding="utf-8")
+        (self.tmp / ".planning" / ".active_plan").write_text(
+            "2026-06-09-gated\n", encoding="utf-8"
+        )
+
+    def tearDown(self) -> None:
+        shutil.rmtree(self.tmp, ignore_errors=True)
+
+    def _run(self, context: str) -> subprocess.CompletedProcess[str]:
+        return subprocess.run(
+            ["sh", str(INJECT_PLAN), f"--context={context}"],
+            cwd=str(self.tmp),
+            text=True,
+            capture_output=True,
+            env=self.env,
+            check=False,
+        )
+
+    def test_gate_token_suppresses_pretool_injection(self) -> None:
+        # autonomous|gated mode drops per-tool-call injection (recitation policy).
+        # With the broken collapse-to-'autonomousgate' parse this branch never
+        # fired and the plan head leaked into every tool call.
+        result = self._run("pretool")
+        self.assertEqual(0, result.returncode, result.stderr)
+        self.assertEqual("", result.stdout.strip(), "gated mode must suppress pretool injection")
+
+    def test_gate_token_uses_ledger_summary_not_raw_tail(self) -> None:
+        # In a v3 mode the raw progress.md tail must NOT be injected; the
+        # structured ledger summary replaces it (security A1.5). 'autonomousgate'
+        # would have fallen through to the legacy raw-tail branch.
+        result = self._run("userprompt")
+        self.assertEqual(0, result.returncode, result.stderr)
+        self.assertIn("ledger summary", result.stdout, "gated mode must emit the ledger summary")
+        self.assertNotIn(
+            "RAWPROGRESS", result.stdout, "gated mode must not inject the raw progress.md tail"
+        )
+
+
+@unittest.skipUnless(have_sh(), "sh not available on this platform")
+class V3AttestationRefusalTests(unittest.TestCase):
+    """v3 mode refuses plan-body injection when no attestation exists (security).
+
+    The nonce delimiter cannot defend against an attacker who can write the plan
+    (same trust domain: .nonce sits next to task_plan.md). Attestation is the real
+    defense, so an unattested plan in autonomous/gated mode must refuse injection
+    rather than silently inject the body. Legacy mode (no .mode file) is unchanged.
+    """
+
+    def setUp(self) -> None:
+        self.tmp = Path(tempfile.mkdtemp(prefix="pwf-attreq-"))
+        self.cache_dir = self.tmp / "_xdg_cache"
+        self.cache_dir.mkdir()
+        self.home_dir = self.tmp / "_home"
+        self.home_dir.mkdir()
+        self.env = os.environ.copy()
+        self.env["CLAUDE_SKILL_DIR"] = str(SKILL_DIR)
+        self.env["XDG_CACHE_HOME"] = str(self.cache_dir)
+        self.env["HOME"] = str(self.home_dir)
+        self.env.pop("PLAN_ID", None)
+        self.plan_dir = self.tmp / ".planning" / "2026-06-09-unattested"
+        self.plan_dir.mkdir(parents=True)
+        (self.plan_dir / "task_plan.md").write_text(
+            "# Secret Plan Body MARKER42\n", encoding="utf-8"
+        )
+        (self.plan_dir / "progress.md").write_text("# progress\n", encoding="utf-8")
+        (self.tmp / ".planning" / ".active_plan").write_text(
+            "2026-06-09-unattested\n", encoding="utf-8"
+        )
+
+    def tearDown(self) -> None:
+        shutil.rmtree(self.tmp, ignore_errors=True)
+
+    def _run(self, context: str) -> subprocess.CompletedProcess[str]:
+        return subprocess.run(
+            ["sh", str(INJECT_PLAN), f"--context={context}"],
+            cwd=str(self.tmp),
+            text=True,
+            capture_output=True,
+            env=self.env,
+            check=False,
+        )
+
+    def test_gated_unattested_refuses_injection(self) -> None:
+        (self.plan_dir / ".mode").write_text("autonomous gate\n", encoding="utf-8")
+        result = self._run("userprompt")
+        self.assertEqual(0, result.returncode, result.stderr)
+        self.assertIn("requires attested plan", result.stdout)
+        self.assertNotIn("MARKER42", result.stdout, "unattested plan body must not be injected")
+
+    def test_autonomous_unattested_refuses_injection(self) -> None:
+        (self.plan_dir / ".mode").write_text("autonomous\n", encoding="utf-8")
+        result = self._run("userprompt")
+        self.assertEqual(0, result.returncode, result.stderr)
+        self.assertIn("requires attested plan", result.stdout)
+        self.assertNotIn("MARKER42", result.stdout)
+
+    def test_legacy_unattested_still_injects(self) -> None:
+        # No .mode file: legacy behavior unchanged, attestation stays opt-in, the
+        # plan body is injected exactly as in v2.
+        result = self._run("userprompt")
+        self.assertEqual(0, result.returncode, result.stderr)
+        self.assertIn("MARKER42", result.stdout, "legacy mode must still inject the plan body")
+        self.assertNotIn("requires attested plan", result.stdout)
+
+
+@unittest.skipUnless(have_sh(), "sh not available on this platform")
+class ScriptAbsentWithPlanPresentTests(unittest.TestCase):
+    """Document the known v3 design decision: script-absent + plan-present = silent exit.
+
+    v2 hook bodies were self-contained inline scalars that injected plan context
+    whenever task_plan.md existed, needing zero scripts on disk. v3 moved that logic
+    into inject-plan.sh, so if neither CLAUDE_SKILL_DIR nor a known install path
+    resolves the script, the dispatcher exits 0 silently even when a task_plan.md is
+    present in the cwd. This is the accepted v3 trade-off (logic lives in versioned,
+    testable scripts; skill-only and plugin installs both ship scripts/ so dispatch
+    resolves). This test pins that decision explicitly rather than leaving it implicit:
+    it is a known difference from the v2 inline scalars, not a silent regression.
+    """
+
+    def test_dispatcher_silent_exit_when_plan_present_but_script_absent(self) -> None:
+        scalar = extract_hook_scalar("UserPromptSubmit")
+        with tempfile.TemporaryDirectory() as tmp, tempfile.TemporaryDirectory() as fake_home:
+            # A real plan IS present in the working dir...
+            (Path(tmp) / "task_plan.md").write_text("# Present Plan\n", encoding="utf-8")
+            (Path(tmp) / "progress.md").write_text("# progress\n", encoding="utf-8")
+            script = Path(tmp) / "_dispatch.sh"
+            script.write_text(scalar, encoding="utf-8")
+            env = os.environ.copy()
+            env.pop("CLAUDE_SKILL_DIR", None)  # no skill dir
+            env["HOME"] = fake_home  # no install under either known path
+            result = subprocess.run(
+                ["sh", str(script)],
+                cwd=tmp,
+                text=True,
+                capture_output=True,
+                env=env,
+                check=False,
+            )
+            # KNOWN v3 design decision: v3 requires scripts on disk; with the
+            # script absent the dispatcher exits 0 silently even though a plan is
+            # present. v2 inline scalars would have injected here. This is the
+            # documented v3 trade-off, not a hidden regression.
+            self.assertEqual(0, result.returncode, result.stderr)
+            self.assertEqual("", result.stdout.strip())
+
+
 if __name__ == "__main__":
     unittest.main()
