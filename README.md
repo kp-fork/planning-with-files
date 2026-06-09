@@ -1,10 +1,12 @@
 <div align="center">
-<img src="media/banner.png" alt="planning-with-files" width="100%">
+<img src="media/v3-banner.png" alt="planning-with-files" width="100%">
 </div>
 
 # Planning with Files
 
 > **Work like Manus** — the AI agent company Meta acquired for **$2 billion**.
+>
+> Persistent file-based planning for long-running agentic tasks: crash-proof markdown plans, a deliberate completion gate, and multi-agent shared state on disk.
 
 [![Benchmark](https://img.shields.io/badge/Benchmark-96.7%25_pass_rate_(v2.21.0%2C_sonnet--4--6)-brightgreen)](docs/evals.md)
 [![A/B Verified](https://img.shields.io/badge/A%2FB_Blind-3%2F3_wins-brightgreen)](docs/evals.md)
@@ -13,7 +15,7 @@
 
 [![Skills Playground](https://skillsplayground.com/badges/installs/othmanadi-planning-with-files-planning-with-files.svg)](https://skillsplayground.com/skills/othmanadi-planning-with-files-planning-with-files/)
 [![Downloads](https://skill-history.com/badge/othmanadi/planning-with-files.svg)](https://skill-history.com/othmanadi/planning-with-files)
-[![Version](https://img.shields.io/badge/version-2.43.0-brightgreen)](https://github.com/OthmanAdi/planning-with-files/releases)
+[![Version](https://img.shields.io/badge/version-3.0.0-brightgreen)](https://github.com/OthmanAdi/planning-with-files/releases)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![Closed Issues](https://img.shields.io/github/issues-closed/OthmanAdi/planning-with-files?color=success)](https://github.com/OthmanAdi/planning-with-files/issues?q=is%3Aissue+is%3Aclosed)
 [![Closed PRs](https://img.shields.io/github/issues-pr-closed/OthmanAdi/planning-with-files?color=success)](https://github.com/OthmanAdi/planning-with-files/pulls?q=is%3Apr+is%3Aclosed)
@@ -69,10 +71,11 @@ See the full list of everyone who made this project better in [CONTRIBUTORS.md](
 <details>
 <summary><strong>📦 Releases & Session Recovery</strong></summary>
 
-### Current Version: v2.43.0
+### Current Version: v3.0.0
 
 | Version | Highlights |
 |---------|------------|
+| **v3.0.0** | **Autonomous and gated modes for long-running agentic runs, structured run ledger, opt-in completion gate** (no breaking changes: with no mode marker the hooks produce byte-identical v2.43 output). `init-session --autonomous` drops the per-tool-call plan re-injection for strong models and keeps the turn-start injection; `--gated` adds a deliberate Stop-hook completion gate that blocks only when five conditions hold (gated mode, an `in_progress` phase, `stop_hook_active` false, block count under the cap, ledger progressed since the last block), so an incomplete plan alone never traps a session. New append-only JSONL run ledger (`ledger-append`, `ledger-summary`, `phase-status`, sh + ps1) replaces the raw `progress.md` tail in v3 modes with a fixed-shape summary. Attestation is default-on in v3 modes and unattested plan bodies are refused at injection. Per-session nonce delimiters, SHA cache moved to `$XDG_CACHE_HOME/pwf-sha`, realpath containment in the plan-dir resolver. Hook scalars replaced by thin dispatchers (`inject-plan.sh`, `gate-stop.sh`) shipped in both `scripts/` locations. New `templates/task_plan_autonomous.md` with `DependsOn`/`Owner`/`AcceptanceCheck` fields, v2-to-v3 migration guide in `MIGRATION.md`, host capability tiers documented (hard block, follow-up inject, notify only). Suite at 178 passed plus location-parity and gate/ledger/init-mode/containment tests. |
 | **v2.43.0** | **CONTRIBUTING.md + OpenCode docs fix + `.continue`/`.gemini`/`.kiro` variant sync to parity** (PR #171 by @Skulli485, issue #172 by @luyanfeng, issues #159/#160/#161): first `CONTRIBUTING.md` at repo root, auto-surfaced by GitHub in the PR creation flow. `docs/opencode.md` Quick Install switched from \`git clone\` to \`npx skills add\` after the manual-install block was found referencing a doubled path (`planning-with-files/planning-with-files/SKILL.md`). Three historically lagging IDE SKILL.md variants brought to v2.43.0 parity: `.continue` from v2.34.0 (9 versions behind), `.gemini` from v2.34.0 (9 versions behind), `.kiro` from v2.32.0-kiro (11 versions behind), preserving IDE-specific frontmatter, hook shapes, and Kiro Agent Skill layout. |
 | **v2.42.0** | **POSIX `init-session.sh` portability + plugin-vs-skill install transparency + Topic Handoff docs** (PR #169 and PR #170 by @carterusedulm2-maker): `init-session.sh` and its 7 mirrors swap the `[[ ]]` bashism for POSIX `[ ]` so `tests/test_init_session_slug.py` runs cleanly under `dash` (Ubuntu) when the test invokes the script via `sh` rather than the `bash` shebang. Canonical SKILL.md gains an install-scope clarification: `/plugin install` ships the `commands/` folder with `/plan-goal` and `/plan-loop`, but `npx skills add` (and ClawHub) do not. A manual fallback procedure for both wrappers is documented inline so skill-only sessions can produce the same effect by invoking Claude Code's native `/goal` and `/loop` primitives directly. `docs/quickstart.md` and `docs/workflow.md` add an optional Topic Handoff Pattern for very long-running operational topics (`handoffs/<topic>.md` alongside `progress.md`). |
 | **v2.41.0** | **Windows exec-bit test skip + attestation-locking docs** (PR #167 by @gauravvojha, Issue #166; PR #168 by @CleanDev-Fix, Issue #165): `test_script_permissions.py` now skips on Windows with a class-level `pytest.mark.skipif(sys.platform == "win32")` since NTFS does not store POSIX executable bits; the 2 pre-existing Windows exec-bit failures (present since v2.34.1) are resolved. New dedicated `docs/attestation-locking.md` page documents the `attest-plan.sh` write path, the atomic temp-rename guarantee, the optional `flock` advisory lock, and the recommended slug-mode workflow for parallel sessions. |
