@@ -4,6 +4,8 @@
 
 # Planning with Files
 
+> 📣 **New in [v3.0.0](https://github.com/OthmanAdi/planning-with-files/releases/tag/v3.0.0):** opt-in autonomous and gated modes for long-running agent runs, with a completion gate that holds the agent until the plan is actually done. Existing setups change nothing.
+
 > **Work like Manus** — the AI agent company Meta acquired for **$2 billion**.
 >
 > Persistent file-based planning for long-running agentic tasks: crash-proof markdown plans, a deliberate completion gate, and multi-agent shared state on disk.
