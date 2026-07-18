@@ -2,6 +2,36 @@
 
 All notable changes to this project will be documented in this file.
 
+## [3.6.0] - 2026-07-18
+
+### Fixed
+
+- **Plan resolution and hook injection went silently dark on machines with Windows-native coreutils on PATH.** A native coreutils build (for example `C:\Program Files\coreutils`, increasingly common via winget or uutils) shadows Git Bash's tools inside `sh`, and its `realpath` canonicalizes MSYS `/c/...` input to `C:\`-style backslash output. The containment guard in `resolve-plan-dir.sh` and `inject-plan.sh` compares canonical paths with a forward-slash prefix pattern, so every comparison failed: the resolver resolved nothing, `inject-plan.sh` emitted nothing, and every hook fire exited 0 with no error. The plan mechanisms this skill is built on were fully disabled on such machines with no visible symptom, and Linux CI could never reproduce it. Canonical paths are now backslash-normalized (pure-shell, no extra process) before comparison. Found live during a repo audit on a machine where 33 local tests failed while CI stayed green.
+
+- **The resolver's containment root still canonicalized `$PWD` instead of `.`.** The v3.2.0 fix for 8.3 short-name and `/tmp`-alias mismatches landed in `inject-plan.sh` only; `resolve-plan-dir.sh` kept the old form and additionally canonicalized absolute candidates built from the `$PWD` string, which a Windows-native `realpath` does not spell the same way as a short-form process cwd. The resolver now canonicalizes the root via `.` and checks candidates through their cwd-relative form, so both sides resolve through the same physical-cwd base. Emitted output is unchanged.
+
+- **The local `test_ledger.py` hang on Windows is gone.** Known since v3.4.1 as "hangs locally, green on CI"; it stopped reproducing once the containment comparison was fixed. The ledger suite (12 tests) now passes locally in under 15 seconds.
+
+### Added
+
+- **`/plan-doctor` self-check command** (`commands/plan-doctor.md`, `scripts/plan-doctor.sh`, dual-shipped and parity-tested). Every failure in this class is silent by design (hooks always exit 0), so a broken install looks identical to "no plan yet". The doctor answers, in one pass: does resolution work here and which plan wins, does injection actually emit plan context, what path shape does the canonicalizer produce (warns about the pre-v3.6.0 dark condition), is the plan attested, which install surfaces exist on this machine, and what one hook fire costs in wall-clock. From the July 2026 benchmark improvement backlog.
+
+- **Install-route matrix and trust prerequisite in `docs/installation.md`.** The plugin route ships `commands/` and registers hooks reliably; `npx skills add` and manual skill copies ship no slash commands, and SKILL.md frontmatter hooks have been observed unregistered on project-level installs (headless Claude Code 2.1.201, July 2026 benchmark). Project trust (`hasTrustDialogAccepted`) silently gates project-level skills. Both conditions are now documented with the doctor as the verification step.
+
+- **Belt-and-suspenders trigger line for CLAUDE.md.** The July 2026 benchmark measured unforced skill engagement at 60-67% while always-loaded rules-file instructions engaged 100%. Install docs now offer a one-line CLAUDE.md snippet that makes engagement deterministic while the skill description keeps handling discovery.
+
+- **Regression tests for the backslash-canonicalizer class** (`tests/test_containment.py`): a PATH-prepended stub `realpath` reproduces the Windows-native output shape on every platform, so ubuntu CI now guards a Windows-only field failure.
+
+### Changed
+
+- **Hook fire cost dropped.** Per-candidate `grep -Eq` slug checks and `basename` calls in `resolve-plan-dir.sh` and `inject-plan.sh` were replaced with equivalent shell builtins (case patterns and parameter expansion), and the resolver computes its containment root once per run instead of once per candidate. One `inject-plan.sh` fire measures 289ms wall-clock on the same machine that measured 2.0-2.4s at v3.4.0 (July 2026 benchmark, F4). Output is byte-identical; the legacy invariant holds.
+
+- README documents v3.6.0, adds a plan-mode handoff FAQ (how an accepted plan-mode plan becomes `task_plan.md` phases, answering the open question in #19), and updates the supported-agents answer to the current `.agents/skills/` standard landscape. The stale Manus-2025 "one tool call per turn" guidance was replaced with the 2026 parallel-host update in the last two variant copies that still carried it (`.factory`, `.mastracode`).
+
+### Verification
+
+- Full suite green locally on the machine that reproduced the bug: 205 passed plus 12 ledger tests, 5 skipped, 0 failed (was 33 failed before the fix). Live smoke: `sh scripts/inject-plan.sh` emits plan context in a repo with an active plan, `scripts/plan-doctor.sh` reports PASS on resolution and injection with the Windows-native canonicalizer present.
+
 ## [3.5.1] - 2026-07-14
 
 ### Fixed
