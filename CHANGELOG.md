@@ -2,6 +2,20 @@
 
 All notable changes to this project will be documented in this file.
 
+## [3.8.1] - 2026-07-21
+
+### Fixed
+- **Pi extension: plan resolution no longer depends on the live shell cwd (closes #208, reported by @fd44fdg).** The Pi session cwd follows the shell, so an agent that changed into a subdirectory lost the project's plan entirely: resolution found nothing, the recitation went dark, and the "No task_plan.md found" warning fired on every write and edit. Resolution now anchors on the nearest ancestor directory that carries planning state (`.planning/` or `task_plan.md`), bounded by a `.git` repository boundary and a depth cap so a plan outside the repository can never leak into a session. Explicit `PLAN_ID` pins keep working from any subdirectory. New vitest suite covers the walk, the boundary, and the preserved precedence (`__tests__/plan-anchor.test.ts`).
+- **Pi extension: every injection now states which plan it resolved** (`plan: <id>` or `plan: root`). A stale `.planning/<id>/` directory shadows a root `task_plan.md` by documented precedence (slug beats root since v2.40.0); without a visible label that shadowing was silent and users debugged the wrong plan. The label makes it visible; `set-active-plan` or deleting the stale directory remains the cure.
+- **`init-session` created plans without the v3.8.0 `## Next Step` section.** The scripts write plans from an inline heredoc, not from `templates/task_plan.md`, so the section shipped in the templates never reached created plans. All 26 heredoc copies (sh and PowerShell, canonical plus every mirror) now carry it, and a regression test asserts the created output rather than the template (`test_init_session_output_contains_next_step`).
+
+### Security
+- The Pi extension resolver reached slug-validation and containment parity with the sh resolver. A traversal `PLAN_ID` such as `../../outside` resolved a plan outside `.planning/` (the sh resolver already blocked it), slug-invalid `.active_plan` targets and directory names were accepted, and a scoped winner canonicalizing outside the project (a junctioned slug directory) was followed. All four now match the sh behavior: `SLUG_RE` on every branch, `realpathSync` containment fail-closed on the resolved winner. Found independently by the Opus verification pass and the Sonnet reliability fleet that gate this release.
+- Every Pi runtime consumer that takes a directory (the session-attachment gate, project mode config, attest and catchup script working directories) now routes through the same anchor as plan resolution, and the injected plan label is sanitized to `[A-Za-z0-9._-]` capped at 64 characters.
+
+### Thanks
+- fd44fdg reported the Pi cwd resolution split-brain with a precise root-cause analysis (#208).
+
 ## [3.8.0] - 2026-07-21
 
 ### Fixed

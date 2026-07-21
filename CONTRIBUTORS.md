@@ -106,6 +106,10 @@ These amazing people have contributed code, documentation, or significant improv
 
 ### Other Contributors
 
+- **[@fd44fdg](https://github.com/fd44fdg)** - [Issue #208](https://github.com/OthmanAdi/planning-with-files/issues/208)
+  - Reported that a stale `.planning/<id>/` directory silently shadowed a fresh root `task_plan.md` in the Pi extension while a false "No task_plan.md found" warning fired on every write and edit, with a root-cause trace against `resolvePlanPaths` and the `runtime.ts` warning path
+  - **Impact:** v3.8.1 anchors Pi plan resolution on the nearest ancestor with planning state (bounded by the `.git` repository boundary), labels every injection with the resolved plan id so shadowing is visible, and kills the subdirectory warning loop; bundled Pi extension bumped to 1.2.2
+
 - **[@jschmied](https://github.com/jschmied)** - [Issue #206](https://github.com/OthmanAdi/planning-with-files/issues/206)
   - Diagnosed that pre-tool recitations and the tamper notice queued by the Pi extension's `tool_call` hook were delivered as steer, and that an interactive tool such as AskUserQuestion blocking the turn on its own custom UI consumed that steer text as the dialog's answer instead of letting it reach the model, pinning down the precise runtime location of the collision and the `nextTurn` delivery fix that shipped
   - **Impact:** v3.5.1 delivers Pi extension recitations and the tamper notice as `nextTurn` instead of steer, so interactive tool dialogs no longer swallow injected planning text; bundled Pi extension bumped to 1.2.1
