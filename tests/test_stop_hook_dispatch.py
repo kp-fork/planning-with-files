@@ -39,7 +39,7 @@ CANONICAL_SKILL = REPO_ROOT / "skills" / "planning-with-files" / "SKILL.md"
 SKILL_DIR = REPO_ROOT / "skills" / "planning-with-files"
 
 # Every SKILL.md that carries a Stop scalar (canonical + language variants +
-# IDE mirrors + clawhub upload copy). Kept in sync with the parity surfaces.
+# IDE mirrors). Kept in sync with the parity surfaces.
 ALL_STOP_SKILL_FILES = [
     REPO_ROOT / "skills" / "planning-with-files" / "SKILL.md",
     REPO_ROOT / "skills" / "planning-with-files-ar" / "SKILL.md",
@@ -54,8 +54,13 @@ ALL_STOP_SKILL_FILES = [
     REPO_ROOT / ".factory" / "skills" / "planning-with-files" / "SKILL.md",
     REPO_ROOT / ".mastracode" / "skills" / "planning-with-files" / "SKILL.md",
     REPO_ROOT / ".opencode" / "skills" / "planning-with-files" / "SKILL.md",
-    REPO_ROOT / "clawhub-upload" / "SKILL.md",
 ]
+# clawhub-upload/SKILL.md is gitignored and may be absent on a fresh clone
+# (same convention as test_skill_frontmatter_valid.py); cover it only when
+# present so CI and local runs agree.
+_CLAWHUB_SKILL = REPO_ROOT / "clawhub-upload" / "SKILL.md"
+if _CLAWHUB_SKILL.is_file():
+    ALL_STOP_SKILL_FILES.append(_CLAWHUB_SKILL)
 
 HOOK_RE = r'Stop:\n(?:.*?\n)*?\s*command: "((?:[^"\\]|\\.)*)"'
 
