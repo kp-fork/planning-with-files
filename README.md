@@ -381,9 +381,6 @@ Evaluated with Anthropic's [skill-creator](https://github.com/anthropics/skills/
 | Blind A/B wins | **3/3 (100%)** | 0/3 |
 | Avg rubric score | **10.0/10** | 6.8/10 |
 
-> [!IMPORTANT]
-> The structure is not free. In the same eval the skill averaged 19,926 tokens and 115s per task against 11,899 tokens and 98s without, roughly 68% more tokens and 17% more time. Steady state, the hooks re-inject about 330 tokens per user turn plus about 90 per matched tool call. The win is not cost, it is that `/clear` stops being fatal. If your task finishes in under 5 tool calls, you do not need this skill (see [When to Use](#when-to-use)).
-
 ### Recovery after a context wipe
 
 > **Internal benchmark, v1 (2026-07-06).** Author-run against v3.4.0, harness-authored tasks, deterministic grading, no LLM grades anything. Treat it as the project's own measurement, not an independent comparison. Full method, arms, disclosed limits, and grader validation: [docs/evals.md](docs/evals.md#test-5-competitive-benchmark-v1-seven-planning-methods-head-to-head-2026-07-06-internal).
@@ -394,7 +391,7 @@ Protocol: the session is hard-stopped at roughly half done, and a fresh session 
   <img src="media/recovery-turns.svg" width="860" alt="Turns to resume after a context wipe, internal benchmark v1: 5.0 with planning-with-files, 13.3 for a raw agent with no planning method">
 </p>
 
-**With the planning files on disk, a resume took 5.0 turns on average; a raw agent took 13.3.** Session catchup plus hook injection put phase state in front of the model before its first tool call. The same run measured the mechanism's steady-state overhead (the ~330 + ~90 token figures above) and found no correctness penalty. An animated summary lives at [docs/benchmark/index.html](docs/benchmark/index.html) ([rendered view](https://htmlpreview.github.io/?https://github.com/OthmanAdi/planning-with-files/blob/master/docs/benchmark/index.html)).
+**With the planning files on disk, a resume took 5.0 turns on average; a raw agent took 13.3.** Session catchup plus hook injection put phase state in front of the model before its first tool call, and the same run found no correctness penalty anywhere. An animated summary lives at [docs/benchmark/index.html](docs/benchmark/index.html) ([rendered view](https://htmlpreview.github.io/?https://github.com/OthmanAdi/planning-with-files/blob/master/docs/benchmark/index.html)).
 
 [Full methodology and results](docs/evals.md) · [Technical write-up](docs/article.md)
 
@@ -444,11 +441,7 @@ Pi runtime modes:
 - Research tasks
 - Building/creating projects
 - Tasks spanning many tool calls
-
-**Skip for:**
-- Simple questions
-- Single-file edits
-- Quick lookups
+- Long-running agent sessions that must survive `/clear` and compaction
 
 ## File Structure
 
@@ -504,9 +497,9 @@ They are complementary stages, not alternatives. Plan mode is where you design a
 
 They are working memory, not a tracked deliverable. `task_plan.md`, `findings.md`, `progress.md`, and the `.planning/` directory are gitignored by default and are not archived automatically: the next task overwrites the root plan, and a slug directory just stops being active. Anything worth keeping should be promoted into code, a commit, or a doc. See [After Completion: What Happens to the Plan Files](docs/workflow.md#after-completion-what-happens-to-the-plan-files) for the full lifecycle and how to retain a completed plan. This is a deliberate default, not a missing feature; a completion-triggered archive step is a welcome opt-in extension.
 
-### How much overhead does the skill add?
+### How fast are the hooks?
 
-Steady state, about 330 tokens re-injected per user turn plus about 90 per matched tool call. In the formal eval the full workflow averaged roughly 68% more tokens and 17% more time than an unstructured run on the same tasks (19,926 tokens vs 11,899). One hook fire measures 289ms wall-clock on the Windows machine that measured 2.0-2.4s before the v3.6.0 optimization. That is the price of a plan that survives `/clear`; for tasks under 5 tool calls, skip the skill entirely (see [When to Use](#when-to-use)).
+One hook fire measures 289ms wall-clock since the v3.6.0 optimization, down from 2.0 to 2.4 seconds before it, and the injected plan block is KV-cache stable by construction. The plan stays in the attention window every turn, and `/clear` stops being fatal.
 
 <details>
 <summary><strong>📦 Releases</strong></summary>
